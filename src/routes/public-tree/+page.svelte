@@ -25,6 +25,70 @@
   let pinchStartDist = 0;
   let pinchStartView = null;
 
+function fitTreeToScreen() {
+  if (!people.length) {
+    view = {
+      x: -40,
+      y: -40,
+      w: workspaceMm + 80,
+      h: workspaceMm + 80
+    };
+    return;
+  }
+
+  const centerX = workspaceMm / 2;
+  const centerY = workspaceMm / 2;
+
+  const usedRingIds = new Set(
+    people.map((p) => p.ringId).filter(Boolean)
+  );
+
+  const usedRings = rings.filter((r) => usedRingIds.has(r.id));
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  if (usedRings.length) {
+    const maxUsedRadius = Math.max(...usedRings.map(ringRadiusMm));
+    minX = Math.min(minX, centerX - maxUsedRadius);
+    maxX = Math.max(maxX, centerX + maxUsedRadius);
+    minY = Math.min(minY, centerY - maxUsedRadius);
+    maxY = Math.max(maxY, centerY + maxUsedRadius);
+  }
+
+  for (const p of people) {
+    const x = Number(p.x) || 0;
+    const y = Number(p.y) || 0;
+    const r = personRadiusMm(p) + 8;
+
+    minX = Math.min(minX, x - r);
+    maxX = Math.max(maxX, x + r);
+    minY = Math.min(minY, y - r);
+    maxY = Math.max(maxY, y + r);
+  }
+
+  if (!Number.isFinite(minX)) {
+    view = {
+      x: -40,
+      y: -40,
+      w: workspaceMm + 80,
+      h: workspaceMm + 80
+    };
+    return;
+  }
+
+  const pad = 24;
+
+  view = {
+    x: minX - pad,
+    y: minY - pad,
+    w: Math.max(160, maxX - minX + pad * 2),
+    h: Math.max(160, maxY - minY + pad * 2)
+  };
+}
+
   function splitNameToLines(name = "", maxChars = 8) {
     const text = String(name || "").trim();
     if (!text) return [""];
@@ -306,7 +370,7 @@
       zoom = Number(raw.zoom) || 1;
       fontFamily = raw.fontFamily || "Cairo, Arial, sans-serif";
 
-      fitViewToContent();
+      fitTreeToScreen();
     } catch (err) {
       errorMsg = String(err);
     } finally {
@@ -344,19 +408,8 @@
       </div>
 
       <div class="actions">
-        <button class="btn" on:click={fitViewToContent}>ملاءمة</button>
-        <button
-          class="btn"
-          on:click={() =>
-            (view = {
-              x: -40,
-              y: -40,
-              w: workspaceMm + 80,
-              h: workspaceMm + 80
-            })}
-        >
-          المساحة كاملة
-        </button>
+       
+        <button class="btn" on:click={fitTreeToScreen}>ملاء الشاشة</button>
       </div>
     </div>
 

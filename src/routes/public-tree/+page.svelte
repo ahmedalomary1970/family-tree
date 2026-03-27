@@ -6,7 +6,7 @@
   let raw = null;
 
   let workspaceCm = 150;
-  let workspaceMm =1500
+  let workspaceMm = 1500;
 
   let rings = [];
   let people = [];
@@ -20,90 +20,99 @@
 
   let isPanning = false;
   let panStart = { x: 0, y: 0, vx: 0, vy: 0 };
-function splitNameToLines(name = "", maxChars = 8) {
-  const text = String(name || "").trim();
-  if (!text) return [""];
 
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines = [];
-  let current = "";
+  let activePointers = new Map();
+  let pinchStartDist = 0;
+  let pinchStartView = null;
 
-  for (const word of words) {
-    const test = current ? `${current} ${word}` : word;
-    if (test.length <= maxChars) {
-      current = test;
-    } else {
-      if (current) lines.push(current);
-      current = word;
+  function splitNameToLines(name = "", maxChars = 8) {
+    const text = String(name || "").trim();
+    if (!text) return [""];
+
+    const words = text.split(/\s+/).filter(Boolean);
+    const lines = [];
+    let current = "";
+
+    for (const word of words) {
+      const test = current ? `${current} ${word}` : word;
+      if (test.length <= maxChars) {
+        current = test;
+      } else {
+        if (current) lines.push(current);
+        current = word;
+      }
     }
+
+    if (current) lines.push(current);
+    return lines.slice(0, 4);
   }
 
-  if (current) lines.push(current);
-  return lines.slice(0, 4);
-}
+  function personTextLines(p) {
+    const r = personRadiusMm(p);
+    const maxChars =
+      r >= 18 ? 10 :
+      r >= 14 ? 8 :
+      r >= 10 ? 6 : 4;
 
-function personTextLines(p) {
-  const r = personRadiusMm(p);
-  const maxChars =
-    r >= 18 ? 10 :
-    r >= 14 ? 8 :
-    r >= 10 ? 6 : 4;
+    return splitNameToLines(p?.name || "", maxChars);
+  }
 
-  return splitNameToLines(p?.name || "", maxChars);
-}
   function clamp(v, min, max) {
     return Math.max(min, Math.min(max, v));
   }
 
   function fitViewToContent() {
-  const cx = workspaceMm / 3;
-  const cy = workspaceMm / 3;
+    const cx = workspaceMm / 3;
+    const cy = workspaceMm / 3;
 
-  let minX = 0;
-  let minY = 0;
-  let maxX = workspaceMm;
-  let maxY = workspaceMm;
+    let minX = 0;
+    let minY = 0;
+    let maxX = workspaceMm;
+    let maxY = workspaceMm;
 
-  if (rings.length) {
-    const maxRingR = Math.max(...rings.map(ringRadiusMm), workspaceMm / 2);
-    minX = Math.min(minX, cx - maxRingR - 60);
-    maxX = Math.max(maxX, cx + maxRingR + 60);
-    minY = Math.min(minY, cy - maxRingR - 60);
-    maxY = Math.max(maxY, cy + maxRingR + 60);
-  }
-
-  if (people.length) {
-    for (const p of people) {
-      const x = Number(p.x) || 0;
-      const y = Number(p.y) || 0;
-      const r = personRadiusMm(p) + 20;
-
-      minX = Math.min(minX, x - r);
-      maxX = Math.max(maxX, x + r);
-      minY = Math.min(minY, y - r);
-      maxY = Math.max(maxY, y + r);
+    if (rings.length) {
+      const maxRingR = Math.max(...rings.map(ringRadiusMm), workspaceMm / 2);
+      minX = Math.min(minX, cx - maxRingR - 60);
+      maxX = Math.max(maxX, cx + maxRingR + 60);
+      minY = Math.min(minY, cy - maxRingR - 60);
+      maxY = Math.max(maxY, cy + maxRingR + 60);
     }
+
+    if (people.length) {
+      for (const p of people) {
+        const x = Number(p.x) || 0;
+        const y = Number(p.y) || 0;
+        const r = personRadiusMm(p) + 20;
+
+        minX = Math.min(minX, x - r);
+        maxX = Math.max(maxX, x + r);
+        minY = Math.min(minY, y - r);
+        maxY = Math.max(maxY, y + r);
+      }
+    }
+
+    view = {
+      x: minX,
+      y: minY,
+      w: Math.max(300, maxX - minX),
+      h: Math.max(300, maxY - minY),
+    };
   }
 
-  view = {
-    x: minX,
-    y: minY,
-    w: Math.max(300, maxX - minX),
-    h: Math.max(300, maxY - minY),
-  };
-}
   function getRingById(id) {
-  return rings.find((r) => r.id === id) || null;
-}
-function generationLabelForMarker(gm) {
-  const idx = rings.findIndex((r) => r.id === gm?.ringId);
-  if (idx === -1) return "";
+    return rings.find((r) => r.id === id) || null;
+  }
 
-  return String((Number(raw?.baseGenerationNumber) || 1) + idx);
-}
-function ringRadiusMm(r) {
-  return (Number(r?.diameterCm) || 0) * 5;
-}
+  function generationLabelForMarker(gm) {
+    const idx = rings.findIndex((r) => r.id === gm?.ringId);
+    if (idx === -1) return "";
+    return String((Number(raw?.baseGenerationNumber) || 1) + idx);
+  }
+
+  function ringRadiusMm(r) {
+    return (Number(r?.diameterCm) || 0) * 5;
+  }
+
   function getPersonById(id) {
     return people.find((p) => p.id === id) || null;
   }
@@ -141,12 +150,16 @@ function ringRadiusMm(r) {
     return d;
   }
 
-  function onWheel(e) {
-    e.preventDefault();
+  function pointerDistance(a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return Math.hypot(dx, dy);
+  }
 
-    const factor = e.deltaY > 0 ? 1.12 : 0.88;
-    const mx = e.offsetX / e.currentTarget.clientWidth;
-    const my = e.offsetY / e.currentTarget.clientHeight;
+  function zoomAtClientPoint(clientX, clientY, factor, target) {
+    const rect = target.getBoundingClientRect();
+    const mx = (clientX - rect.left) / rect.width;
+    const my = (clientY - rect.top) / rect.height;
 
     const nw = clamp(view.w * factor, 120, workspaceMm * 2);
     const nh = clamp(view.h * factor, 120, workspaceMm * 2);
@@ -162,18 +175,61 @@ function ringRadiusMm(r) {
     };
   }
 
+  function onWheel(e) {
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 1.12 : 0.88;
+    zoomAtClientPoint(e.clientX, e.clientY, factor, e.currentTarget);
+  }
+
   function onPointerDown(e) {
-    isPanning = true;
-    panStart = {
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+
+    activePointers.set(e.pointerId, {
       x: e.clientX,
       y: e.clientY,
-      vx: view.x,
-      vy: view.y,
-    };
+    });
+
+    if (activePointers.size === 1) {
+      isPanning = true;
+      panStart = {
+        x: e.clientX,
+        y: e.clientY,
+        vx: view.x,
+        vy: view.y,
+      };
+    }
+
+    if (activePointers.size === 2) {
+      isPanning = false;
+      const pts = Array.from(activePointers.values());
+      pinchStartDist = pointerDistance(pts[0], pts[1]);
+      pinchStartView = { ...view };
+    }
   }
 
   function onPointerMove(e) {
-    if (!isPanning) return;
+    if (!activePointers.has(e.pointerId)) return;
+
+    activePointers.set(e.pointerId, {
+      x: e.clientX,
+      y: e.clientY,
+    });
+
+    if (activePointers.size === 2) {
+      const pts = Array.from(activePointers.values());
+      const newDist = pointerDistance(pts[0], pts[1]);
+
+      if (pinchStartDist > 0 && pinchStartView && newDist > 0) {
+        view = { ...pinchStartView };
+        const factor = pinchStartDist / newDist;
+        const centerX = (pts[0].x + pts[1].x) / 2;
+        const centerY = (pts[0].y + pts[1].y) / 2;
+        zoomAtClientPoint(centerX, centerY, factor, e.currentTarget);
+      }
+      return;
+    }
+
+    if (!isPanning || activePointers.size !== 1) return;
 
     const dxPx = e.clientX - panStart.x;
     const dyPx = e.clientY - panStart.y;
@@ -189,8 +245,26 @@ function ringRadiusMm(r) {
     };
   }
 
-  function onPointerUp() {
-    isPanning = false;
+  function onPointerUp(e) {
+    activePointers.delete(e.pointerId);
+
+    if (activePointers.size < 2) {
+      pinchStartDist = 0;
+      pinchStartView = null;
+    }
+
+    if (activePointers.size === 1) {
+      const remaining = Array.from(activePointers.values())[0];
+      isPanning = true;
+      panStart = {
+        x: remaining.x,
+        y: remaining.y,
+        vx: view.x,
+        vy: view.y,
+      };
+    } else {
+      isPanning = false;
+    }
   }
 
   async function loadTree() {
@@ -229,10 +303,7 @@ function ringRadiusMm(r) {
       people = Array.isArray(raw.people) ? raw.people : [];
       links = Array.isArray(raw.links) ? raw.links : [];
       generationMarkers = Array.isArray(raw.generationMarkers) ? raw.generationMarkers : [];
-     console.log("GEN MARKERS COUNT:", generationMarkers.length);
-console.log("GEN MARKERS FIRST:", generationMarkers[0]);
-console.log("GEN MARKERS JSON:", JSON.stringify(generationMarkers[0] || {}, null, 2));
- zoom = Number(raw.zoom) || 1;
+      zoom = Number(raw.zoom) || 1;
       fontFamily = raw.fontFamily || "Cairo, Arial, sans-serif";
 
       fitViewToContent();
@@ -275,17 +346,17 @@ console.log("GEN MARKERS JSON:", JSON.stringify(generationMarkers[0] || {}, null
       <div class="actions">
         <button class="btn" on:click={fitViewToContent}>ملاءمة</button>
         <button
-  class="btn"
-  on:click={() =>
-    (view = {
-      x: -40,
-      y: -40,
-      w: workspaceMm + 80,
-      h: workspaceMm + 80
-    })}
->
-  المساحة كاملة
-</button>
+          class="btn"
+          on:click={() =>
+            (view = {
+              x: -40,
+              y: -40,
+              w: workspaceMm + 80,
+              h: workspaceMm + 80
+            })}
+        >
+          المساحة كاملة
+        </button>
       </div>
     </div>
 
@@ -299,20 +370,21 @@ console.log("GEN MARKERS JSON:", JSON.stringify(generationMarkers[0] || {}, null
         on:pointerdown={onPointerDown}
         on:pointermove={onPointerMove}
         on:pointerup={onPointerUp}
+        on:pointercancel={onPointerUp}
         on:pointerleave={onPointerUp}
       >
-       <rect x="0" y="0" width={workspaceMm} height={workspaceMm} fill="#ffffff" stroke="#e5e7eb" stroke-width="2" />
+        <rect x="0" y="0" width={workspaceMm} height={workspaceMm} fill="#ffffff" stroke="#e5e7eb" stroke-width="2" />
 
-{#each rings as ring}
-  <circle
-    cx={workspaceMm / 2}
-    cy={workspaceMm / 2}
-    r={ringRadiusMm(ring)}
-    fill="none"
-    stroke="#d1d5db"
-    stroke-width="1"
-  />
-{/each}
+        {#each rings as ring}
+          <circle
+            cx={workspaceMm / 2}
+            cy={workspaceMm / 2}
+            r={ringRadiusMm(ring)}
+            fill="none"
+            stroke="#d1d5db"
+            stroke-width="1"
+          />
+        {/each}
 
         {#each links as link}
           {@const parent = getPersonById(link.parentId)}
@@ -330,79 +402,80 @@ console.log("GEN MARKERS JSON:", JSON.stringify(generationMarkers[0] || {}, null
           {/if}
         {/each}
 
-     {#each generationMarkers as gm}
-  {@const label = generationLabelForMarker(gm)}
-  {@const w = Math.max(14, Number(gm.widthMm) || 26)}
-  {@const h = Math.max(10, Number(gm.heightMm) || 12)}
+        {#each generationMarkers as gm}
+          {@const label = generationLabelForMarker(gm)}
+          {@const w = Math.max(14, Number(gm.widthMm) || 26)}
+          {@const h = Math.max(10, Number(gm.heightMm) || 12)}
 
-  <g transform={`translate(${gm.x || 0}, ${gm.y || 0}) rotate(${gm.rotationDeg || 0})`}>
-    <rect
-      x={-w / 2}
-      y={-h / 2}
-      width={w}
-      height={h}
-      rx="2"
-      ry="2"
-      fill={gm.fill || "#ffffff"}
-      stroke={gm.strokeColor || "#374151"}
-      stroke-width="0.8"
-    />
-    <text
-      x="0"
-      y="0"
-      dominant-baseline="middle"
-      text-anchor="middle"
-      font-size={Math.max(6, Number(gm.fontPx) || 10)}
-      fill={gm.textColor || "#111827"}
-      style={`font-family:${fontFamily}; font-weight:700; user-select:none;`}
-    >
-      {label}
-    </text>
-  </g>
-{/each}
-       {#each people as p}
-  {@const r = personRadiusMm(p)}
-  {@const sw = personStrokeMm(p)}
-  {@const lines = personTextLines(p)}
-  {@const lineHeight = Math.max(4, personFontPx(p) * 0.9)}
-  {@const startY = -((lines.length - 1) * lineHeight) / 2}
+          <g transform={`translate(${gm.x || 0}, ${gm.y || 0}) rotate(${gm.rotationDeg || 0})`}>
+            <rect
+              x={-w / 2}
+              y={-h / 2}
+              width={w}
+              height={h}
+              rx="2"
+              ry="2"
+              fill={gm.fill || "#ffffff"}
+              stroke={gm.strokeColor || "#374151"}
+              stroke-width="0.8"
+            />
+            <text
+              x="0"
+              y="0"
+              dominant-baseline="middle"
+              text-anchor="middle"
+              font-size={Math.max(6, Number(gm.fontPx) || 10)}
+              fill={gm.textColor || "#111827"}
+              style={`font-family:${fontFamily}; font-weight:700; user-select:none;`}
+            >
+              {label}
+            </text>
+          </g>
+        {/each}
 
-  <g transform={`translate(${p.x || 0}, ${p.y || 0})`}>
-    {#if p.highlightRing}
-      <circle
-        r={r + 2}
-        fill="none"
-        stroke="#2563eb"
-        stroke-width={sw}
-        opacity="0.9"
-      />
-    {/if}
+        {#each people as p}
+          {@const r = personRadiusMm(p)}
+          {@const sw = personStrokeMm(p)}
+          {@const lines = personTextLines(p)}
+          {@const lineHeight = Math.max(4, personFontPx(p) * 0.9)}
+          {@const startY = -((lines.length - 1) * lineHeight) / 2}
 
-    <circle
-      r={r}
-      fill="#ffffff"
-      stroke="#111827"
-      stroke-width={sw}
-    />
+          <g transform={`translate(${p.x || 0}, ${p.y || 0})`}>
+            {#if p.highlightRing}
+              <circle
+                r={r + 2}
+                fill="none"
+                stroke="#2563eb"
+                stroke-width={sw}
+                opacity="0.9"
+              />
+            {/if}
 
-    <text
-      text-anchor="middle"
-      fill="#111827"
-      style={`font-family:${fontFamily}; user-select:none;`}
-    >
-      {#each lines as line, i}
-        <tspan
-          x="0"
-          y={startY + i * lineHeight}
-          font-size={personFontPx(p)}
-          dominant-baseline="middle"
-        >
-          {line}
-        </tspan>
-      {/each}
-    </text>
-  </g>
-{/each}
+            <circle
+              r={r}
+              fill="#ffffff"
+              stroke="#111827"
+              stroke-width={sw}
+            />
+
+            <text
+              text-anchor="middle"
+              fill="#111827"
+              style={`font-family:${fontFamily}; user-select:none;`}
+            >
+              {#each lines as line, i}
+                <tspan
+                  x="0"
+                  y={startY + i * lineHeight}
+                  font-size={personFontPx(p)}
+                  dominant-baseline="middle"
+                >
+                  {line}
+                </tspan>
+              {/each}
+            </text>
+          </g>
+        {/each}
       </svg>
     </div>
   </div>
@@ -470,6 +543,8 @@ console.log("GEN MARKERS JSON:", JSON.stringify(generationMarkers[0] || {}, null
     border: 1px solid #e5e7eb;
     border-radius: 16px;
     touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
     cursor: grab;
   }
 

@@ -142,8 +142,12 @@
     return (Number(r?.diameterCm) || 0) * 5;
   }
 
+  function idsEqual(a, b) {
+    return String(a ?? "") === String(b ?? "");
+  }
+
   function getPersonById(id) {
-    return people.find((p) => p.id === id) || null;
+    return people.find((p) => idsEqual(p.id, id)) || null;
   }
 
   function personRadiusMm(p) {
@@ -179,29 +183,104 @@
     return d;
   }
 
-  function getDirectParent(personId) {
-    if (!personId) return null;
-    const edge = links.find((link) => link?.childId === personId && link?.parentId);
-    if (!edge) return null;
-    return getPersonById(edge.parentId);
+  function getParentLinkForChild(childId) {
+    if (!childId) return null;
+
+    return (
+      links.find((l) => idsEqual(l?.childId, childId) && l?.parentId) ||
+      links.find((l) => idsEqual(l?.child, childId) && l?.parent) ||
+      links.find((l) => idsEqual(l?.toId, childId) && l?.fromId) ||
+      links.find((l) => idsEqual(l?.target, childId) && l?.source) ||
+      null
+    );
   }
 
-  function buildAscendingLineage(personId) {
-    const chain = [];
-    const seen = new Set();
-    let current = getPersonById(personId);
+  function getParentIdFromLink(link) {
+    return link?.parentId || link?.parent || link?.fromId || link?.source || null;
+  }
 
-    while (current && !seen.has(current.id)) {
-      chain.push(current);
-      seen.add(current.id);
-      current = getDirectParent(current.id);
+  function getChildIdFromLink(link) {
+    return link?.childId || link?.child || link?.toId || link?.target || null;
+  }
+
+  function getLineageDiagnostics(startId) {
+    const result = {
+      selectedId: startId || null,
+      selectedName: "",
+      chainIds: [],
+      chainNames: [],
+      chainLinkKeys: [],
+      hasVisibleAncestors: false,
+      missingParentLinks: [],
+      brokenLinks: [],
+      selectedHasIncomingParentLink: false,
+      note: ""
+    };
+
+    if (!startId) {
+      result.note = "لا يوجد شخص محدد.";
+      return result;
     }
 
-    return chain;
+    const selectedPerson = getPersonById(startId);
+    result.selectedName = String(selectedPerson?.name || "").trim();
+
+    const incomingLinks = links.filter((l) =>
+      idsEqual(getChildIdFromLink(l), startId)
+    );
+    result.selectedHasIncomingParentLink = incomingLinks.length > 0;
+
+    const seen = new Set();
+    let currentId = startId;
+
+    while (currentId && !seen.has(String(currentId))) {
+      seen.add(String(currentId));
+      result.chainIds.push(currentId);
+
+      const person = getPersonById(currentId);
+      const cleanName = String(person?.name || "").trim();
+      result.chainNames.push(cleanName || `(بدون اسم: ${currentId})`);
+
+      const parentLinks = links.filter((l) => idsEqual(getChildIdFromLink(l), currentId));
+      if (!parentLinks.length) break;
+
+      const chosen = parentLinks[0];
+      const parentId = getParentIdFromLink(chosen);
+      result.chainLinkKeys.push(`${parentId}|${currentId}`);
+
+      const parentPerson = getPersonById(parentId);
+      if (!parentPerson) {
+        result.brokenLinks.push({ parentId, childId: currentId });
+        break;
+      }
+
+      if (parentLinks.length > 1) {
+        result.missingParentLinks.push(`يوجد أكثر من رابط أب مباشر للشخص ${cleanName || currentId}`);
+      }
+
+      currentId = parentId || null;
+    }
+
+    result.hasVisibleAncestors = result.chainIds.length > 1;
+
+    if (!result.chainIds.length) {
+      result.note = "تعذر تكوين سلسلة النسب لهذا الشخص.";
+    } else if (!result.hasVisibleAncestors && !result.selectedHasIncomingParentLink) {
+      result.note = "الشخص المحدد لا يملك رابطًا صاعدًا ظاهرًا.";
+    } else if (result.brokenLinks.length) {
+      result.note = "يوجد رابط نسب يشير إلى أب غير موجود داخل الأشخاص.";
+    } else if (result.missingParentLinks.length) {
+      result.note = "تم اعتماد أول رابط أب مباشر فقط لهذا التشخيص.";
+    } else {
+      result.note = "تم تشخيص السلسلة التصاعدية بنجاح.";
+    }
+
+    return result;
   }
 
   $: selectedPerson = getPersonById(selectedPersonId);
-  $: lineageChain = selectedPersonId ? buildAscendingLineage(selectedPersonId) : [];
+  $: lineageDiagnostics = selectedPersonId ? getLineageDiagnostics(selectedPersonId) : getLineageDiagnostics(null);
+  $: lineageText = lineageDiagnostics.chainNames.length ? lineageDiagnostics.chainNames.join(" ← ") : "";
 
   function selectPerson(personId) {
     selectedPersonId = personId;
@@ -362,7 +441,7 @@
       generationMarkers = Array.isArray(raw.generationMarkers) ? raw.generationMarkers : [];
       zoom = Number(raw.zoom) || 1;
       fontFamily = raw.fontFamily || "Cairo, Arial, sans-serif";
-      selectedPersonId = people[0]?.id || null;
+      selectedPersonId = null;
 
       fitTreeToScreen();
     } catch (err) {
@@ -497,6 +576,7 @@
               class="personNode"
               role="button"
               tabindex="0"
+              on:pointerdown|stopPropagation={() => selectPerson(p.id)}
               on:click|stopPropagation={() => selectPerson(p.id)}
               on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && selectPerson(p.id)}
             >
@@ -556,9 +636,11 @@
               الشخص المحدد: <strong>{selectedPerson.name}</strong>
             </div>
 
-            {#if lineageChain.length}
+            {#if lineageDiagnostics.chainNames.length}
+              <div class="diagLineText">{lineageText}</div>
+
               <div class="diagChain">
-                {#each lineageChain as person, idx}
+                {#each lineageDiagnostics.chainNames as name, idx}
                   <div class="diagItem">
                     <div class="diagStep">
                       {#if idx === 0}
@@ -569,10 +651,14 @@
                         الجد {idx - 1}
                       {/if}
                     </div>
-                    <div class="diagName">{person.name || "بدون اسم"}</div>
+                    <div class="diagName">{name || "بدون اسم"}</div>
                   </div>
                 {/each}
               </div>
+
+              {#if lineageDiagnostics.note}
+                <div class="diagNote">{lineageDiagnostics.note}</div>
+              {/if}
             {:else}
               <div class="diagEmpty">لا يوجد نسب صاعد لهذا الشخص.</div>
             {/if}
@@ -691,6 +777,19 @@
     line-height: 1.8;
   }
 
+  .diagLineText {
+    border: 1px solid #fde68a;
+    background: #fffbeb;
+    color: #92400e;
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.9;
+    word-break: break-word;
+  }
+
   .diagChain {
     display: grid;
     gap: 8px;
@@ -712,6 +811,13 @@
   .diagName {
     font-size: 15px;
     font-weight: 700;
+  }
+
+  .diagNote {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #6b7280;
+    line-height: 1.7;
     color: #111827;
   }
 

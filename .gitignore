@@ -1,0 +1,29 @@
+node_modules
+
+# Build and generated output
+dist
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+release
+*.exe
+*.blockmap
+builder-debug.yml
+builder-effective-config.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*

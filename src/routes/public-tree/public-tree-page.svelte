@@ -15,9 +15,6 @@
   let zoom = 1;
   let fontFamily = "Cairo, Arial, sans-serif";
   let projectTitle = "Family Tree";
-  let projectRotationDeg = 0;
-  let globalLinkStrokeWidth = 1.8;
-  let globalPersonStrokeWidth = 1;
 
   let view = { x: 0, y: 0, w: workspaceMm, h: workspaceMm };
 let activeBounds = { x: 0, y: 0, w: workspaceMm, h: workspaceMm };
@@ -594,9 +591,6 @@ function computeActiveBounds() {
       generationMarkers = Array.isArray(raw.generationMarkers) ? raw.generationMarkers : [];
       zoom = Number(raw.zoom) || 1;
       fontFamily = raw.fontFamily || "Cairo, Arial, sans-serif";
-      projectRotationDeg = Number(raw.projectRotationDeg) || 0;
-      globalLinkStrokeWidth = Math.max(0.1, Number(raw.globalLinkStrokeWidth) || 1.8);
-      globalPersonStrokeWidth = Math.max(0.1, Number(raw.globalPersonStrokeWidth) || 1);
       selectedPersonId = null;
 
       computeActiveBounds();
@@ -716,7 +710,6 @@ fitTreeToScreen();
   stroke-width="2"
 />
 
-          <g transform={`rotate(${projectRotationDeg} ${workspaceMm / 2} ${workspaceMm / 2})`}>
           {#each rings as ring}
   <circle
     cx={workspaceMm / 2}
@@ -724,8 +717,8 @@ fitTreeToScreen();
     r={ringRadiusMm(ring)}
     fill="none"
     stroke="#000000"
-    stroke-width="0.5"
-    vector-effect="non-scaling-stroke"
+    stroke-width="1.2"
+   
   />
 {/each}
 
@@ -736,12 +729,11 @@ fitTreeToScreen();
               <path
                 d={linkPathD(parent, child, link.bends)}
                 fill="none"
-                stroke="#000000"
-                stroke-width={globalLinkStrokeWidth}
+                stroke="#2563eb"
+                stroke-width="1.2"
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                opacity="1"
-                vector-effect="non-scaling-stroke"
+                opacity="0.9"
               />
             {/if}
           {/each}
@@ -768,7 +760,6 @@ fitTreeToScreen();
                 y="0"
                 dominant-baseline="middle"
                 text-anchor="middle"
-                transform={`rotate(${-projectRotationDeg - (Number(gm.rotationDeg) || 0)} 0 0)`}
                 font-size={Math.max(6, Number(gm.fontPx) || 10)}
                 fill={gm.textColor || "#111827"}
                 style={`font-family:${fontFamily}; font-weight:700; user-select:none;`}
@@ -798,42 +789,33 @@ fitTreeToScreen();
             >
               {#if p.highlightRing}
                 <circle
-                  r={r + 1}
+                  r={r + 2}
                   fill="none"
-                  stroke="#000000"
-                  stroke-width="1.7"
-                  vector-effect="non-scaling-stroke"
-                />
-                <circle
-                  r={r + 3}
-                  fill="none"
-                  stroke="#000000"
-                  stroke-width="1.7"
-                  vector-effect="non-scaling-stroke"
+                  stroke="#2563eb"
+                  stroke-width={sw}
+                  opacity="0.9"
                 />
               {/if}
 
               {#if isSelected}
                 <circle
-                  r={r + 1.9}
+                  r={r + 4}
                   fill="none"
-                  stroke="#2563eb"
-                  stroke-width="1.2"
-                  vector-effect="non-scaling-stroke"
+                  stroke="#f59e0b"
+                  stroke-width={Math.max(1, sw + 0.4)}
                 />
               {/if}
 
               <circle
                 r={r}
                 fill="#ffffff"
-                stroke={isSelected ? "#2563eb" : "#000000"}
-                stroke-width={isSelected ? globalPersonStrokeWidth + 0.8 : globalPersonStrokeWidth}
+                stroke="#111827"
+                stroke-width={sw}
               />
 
               <text
                 text-anchor="middle"
                 fill="#111827"
-                transform={`rotate(${-projectRotationDeg} 0 0)`}
                 style={`font-family:${fontFamily}; user-select:none;`}
               >
                 {#each lines as line, i}
@@ -849,7 +831,6 @@ fitTreeToScreen();
               </text>
             </g>
           {/each}
-          </g>
         </svg>
       </div>
 

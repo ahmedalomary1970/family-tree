@@ -30,7 +30,8 @@ let activeBounds = { x: 0, y: 0, w: workspaceMm, h: workspaceMm };
 
   let selectedPersonId = null;
   let showLineageDiagnostics = true;
-  let personSearch = "";
+  let personSearchName = "";
+  let personSearchFather = "";
   let searchResults = [];
   let showSearchResults = false;
 function computeActiveBounds() {
@@ -389,20 +390,25 @@ function computeActiveBounds() {
   }
 
   function updateSearchResults() {
-    const q = normalizeArabicText(personSearch);
+    const nameQ = normalizeArabicText(personSearchName);
+    const fatherQ = normalizeArabicText(personSearchFather);
 
-    if (!q) {
+    if (!nameQ && !fatherQ) {
       searchResults = [];
       showSearchResults = false;
       return;
     }
 
     searchResults = people
-      .filter((p) => normalizeArabicText(p?.name || "").includes(q))
       .map((p) => ({
         person: p,
         ...getPersonSearchLabel(p)
       }))
+      .filter((item) => {
+        const matchName = !nameQ || normalizeArabicText(item.selfName).includes(nameQ);
+        const matchFather = !fatherQ || normalizeArabicText(item.fatherName).includes(fatherQ);
+        return matchName && matchFather;
+      })
       .sort((a, b) => a.full.localeCompare(b.full, "ar"))
       .slice(0, 30);
 
@@ -434,7 +440,8 @@ function computeActiveBounds() {
       h: personBox
     };
 
-    personSearch = "";
+    personSearchName = "";
+    personSearchFather = "";
     searchResults = [];
     showSearchResults = false;
   }
@@ -642,11 +649,21 @@ fitTreeToScreen();
           <input
             class="searchInput"
             type="text"
-            bind:value={personSearch}
-            placeholder="ابحث عن شخص بالاسم..."
+            bind:value={personSearchName}
+            placeholder="ابحث بالاسم..."
             on:input={handleSearchInput}
             on:focus={() => {
-              if (personSearch.trim()) showSearchResults = true;
+              if (personSearchName.trim() || personSearchFather.trim()) showSearchResults = true;
+            }}
+          />
+          <input
+            class="searchInput"
+            type="text"
+            bind:value={personSearchFather}
+            placeholder="اسم الأب..."
+            on:input={handleSearchInput}
+            on:focus={() => {
+              if (personSearchName.trim() || personSearchFather.trim()) showSearchResults = true;
             }}
           />
           <button class="btn searchBtn" type="button" on:click={runSearch}>بحث</button>
